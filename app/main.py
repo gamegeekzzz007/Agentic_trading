@@ -3,6 +3,7 @@ app/main.py
 FastAPI entry point for the Agentic Trading system.
 """
 
+import logging
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
@@ -15,13 +16,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import database.models as _models  # noqa: F401 — registers tables with SQLModel metadata
 from app.routes.trades import router as trades_router
 from app.routes.portfolio import router as portfolio_router
+from app.services.alpaca import init_alpaca_service
 from database.connection import get_session, init_db
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Startup: create DB tables. Shutdown: nothing special yet."""
+    """Startup: create DB tables + verify Alpaca connection."""
     await init_db()
+
+    alpaca = init_alpaca_service()
+    try:
+        account = await alpaca.verify_connection()
+        print(
+            f"[OK] Alpaca connected — equity=${account.equity:,.2f}, "
+            f"buying_power=${account.buying_power:,.2f}",
+            flush=True,
+        )
+    except Exception as exc:
+        print(f"[FAIL] Alpaca connection failed: {exc}", flush=True)
+        raise
+
     yield
 
 
