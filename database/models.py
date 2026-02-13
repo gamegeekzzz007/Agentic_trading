@@ -4,8 +4,6 @@ SQLModel table definitions for the Agentic Trading system.
 Trade lifecycle tracking + mathematical audit trail.
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
@@ -101,10 +99,10 @@ class AuditLog(SQLModel, table=True):
     def from_trade_signal(
         cls,
         trade_id: int,
-        signal: TradeSignal,
+        signal: "TradeSignal",
         reasoning: Optional[str] = None,
         meta_data: Optional[Dict[str, Any]] = None,
-    ) -> AuditLog:
+    ) -> "AuditLog":
         """Create an AuditLog directly from a TradeSignal dataclass."""
         return cls(
             trade_id=trade_id,
