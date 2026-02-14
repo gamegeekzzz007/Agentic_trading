@@ -10,3 +10,7 @@ pydantic-settings>=2.0.0
 newsapi-python>=0.2.7
 python-telegram-bot>=21.0
 aiosqlite>=0.20.0
+langgraph>=0.4.0
+smolagents[litellm,toolkit]>=1.24.0
+yfinance>=0.2.40
+pandas>=2.2.0
