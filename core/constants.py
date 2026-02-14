@@ -28,6 +28,7 @@ STATUS_PENDING: Final[str] = "pending"
 STATUS_FILLED: Final[str] = "filled"
 STATUS_CLOSED: Final[str] = "closed"
 STATUS_CANCELLED: Final[str] = "cancelled"
+STATUS_FAILED: Final[str] = "failed"
 
 # ---------------------------------------------------------------------------
 # Defaults

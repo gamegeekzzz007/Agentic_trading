@@ -3,6 +3,7 @@ app/routes/trades.py
 Trade evaluation and CRUD endpoints.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -12,10 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.services.alpaca import AlpacaService, get_alpaca_service
 from core.constants import (
     DEFAULT_REFERENCE_EQUITY,
     MAX_DAILY_DRAWDOWN_PCT,
     STATUS_CLOSED,
+    STATUS_FAILED,
     STATUS_PENDING,
     STOP_LOSS_PCT,
     STRATEGY_VERSION,
@@ -23,6 +26,8 @@ from core.constants import (
 from core.math_utils import TradeSignal, evaluate_trade
 from database.connection import get_session
 from database.models import AuditLog, Trade
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
@@ -164,6 +169,7 @@ async def evaluate_signal(body: EvaluateRequest) -> EvaluateResponse:
 async def create_trade(
     body: CreateTradeRequest,
     session: AsyncSession = Depends(get_session),
+    alpaca: AlpacaService = Depends(get_alpaca_service),
 ) -> TradeResponse:
     """Evaluate -> gate on EV -> gate on drawdown -> persist Trade + AuditLog."""
 
@@ -229,9 +235,34 @@ async def create_trade(
         reasoning=body.reasoning,
     )
     session.add(audit)
+
+    # 7. Submit order to Alpaca
+    try:
+        if body.limit_price is not None:
+            order_result = await alpaca.submit_limit_order(
+                symbol=body.symbol,
+                qty=body.quantity,
+                side=body.side,
+                limit_price=body.limit_price,
+            )
+        else:
+            order_result = await alpaca.submit_market_order(
+                symbol=body.symbol,
+                qty=body.quantity,
+                side=body.side,
+            )
+        trade.alpaca_order_id = order_result.order_id
+        trade.status = order_result.status
+        if order_result.filled_avg_price is not None:
+            trade.entry_price = order_result.filled_avg_price
+    except HTTPException:
+        trade.status = STATUS_FAILED
+        await session.commit()
+        raise
+
     await session.commit()
 
-    # 7. Refresh to load relationship
+    # 8. Refresh to load relationship
     await session.refresh(trade, attribute_names=["audit_log"])
 
     return TradeResponse.from_orm(trade) if hasattr(TradeResponse, "from_orm") else TradeResponse.model_validate(trade)
