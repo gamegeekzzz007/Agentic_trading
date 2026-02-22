@@ -11,16 +11,17 @@ import ast
 import json
 import logging
 import operator
+import os
 import re
 from typing import Annotated, Any, Dict, List
 
+from dotenv import load_dotenv
+
+load_dotenv()  # ensure .env is loaded before model/tool init
+
 from langgraph.graph import END, START, StateGraph
-from smolagents import (
-    CodeAgent,
-    DuckDuckGoSearchTool,
-    InferenceClientModel,
-    ToolCallingAgent,
-)
+from smolagents import CodeAgent, InferenceClientModel, Tool
+from tavily import TavilyClient
 from typing_extensions import TypedDict
 
 logger = logging.getLogger(__name__)
@@ -47,10 +48,42 @@ class AgentState(TypedDict):
 # Authenticates automatically via the HF_TOKEN environment variable.
 free_model = InferenceClientModel(model_id="Qwen/Qwen2.5-Coder-32B-Instruct")
 
+# Tavily search client — uses TAVILY_API_KEY from .env
+_tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY", ""))
 
-def _get_search_tool() -> DuckDuckGoSearchTool:
-    """Return a fresh DuckDuckGoSearchTool instance."""
-    return DuckDuckGoSearchTool()
+
+class TavilySearchTool(Tool):
+    """smolagents-compatible tool that searches the web via Tavily."""
+
+    name = "web_search"
+    description = (
+        "Search the web for current information. "
+        "Returns a list of relevant results with titles, URLs, and content snippets."
+    )
+    inputs = {
+        "query": {
+            "type": "string",
+            "description": "The search query to look up.",
+        }
+    }
+    output_type = "string"
+
+    def forward(self, query: str) -> str:
+        response = _tavily_client.search(query, max_results=5)
+        results = response.get("results", [])
+        if not results:
+            return "No results found."
+        lines: list[str] = []
+        for r in results:
+            lines.append(f"[{r['title']}]({r['url']})")
+            lines.append(r.get("content", "")[:300])
+            lines.append("")
+        return "\n".join(lines)
+
+
+def _get_search_tool() -> TavilySearchTool:
+    """Return a fresh TavilySearchTool instance."""
+    return TavilySearchTool()
 
 
 # ---------------------------------------------------------------------------
@@ -60,9 +93,10 @@ def _get_search_tool() -> DuckDuckGoSearchTool:
 
 def scraper_node(state: AgentState) -> dict:
     """Search the web for a breaking macroeconomic headline."""
-    agent = ToolCallingAgent(
+    agent = CodeAgent(
         tools=[_get_search_tool()],
         model=free_model,
+        verbosity_level=0,
     )
     prompt = (
         "Find one major breaking macroeconomic headline from today. "
@@ -81,9 +115,10 @@ def scraper_node(state: AgentState) -> dict:
 def theorist_node(state: AgentState) -> dict:
     """Generate a second-order trading thesis from the news catalyst."""
     catalyst = state["news_catalyst"]
-    agent = ToolCallingAgent(
+    agent = CodeAgent(
         tools=[],
         model=free_model,
+        verbosity_level=0,
     )
     prompt = (
         f"Given this macroeconomic catalyst: '{catalyst}'. "
@@ -104,9 +139,10 @@ def theorist_node(state: AgentState) -> dict:
 def fact_checker_node(state: AgentState) -> dict:
     """Verify the news catalyst against corroborating sources."""
     catalyst = state["news_catalyst"]
-    agent = ToolCallingAgent(
+    agent = CodeAgent(
         tools=[_get_search_tool()],
         model=free_model,
+        verbosity_level=0,
     )
     prompt = (
         f"Verify if this news headline is factually accurate: '{catalyst}'. "
@@ -164,6 +200,7 @@ def quant_sandbox_node(state: AgentState) -> dict:
     agent = CodeAgent(
         tools=[],
         model=free_model,
+        verbosity_level=0,
         additional_authorized_imports=["yfinance", "pandas", "datetime"],
     )
     prompt = (

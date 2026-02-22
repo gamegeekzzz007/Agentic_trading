@@ -14,3 +14,4 @@ langgraph>=0.4.0
 smolagents[litellm,toolkit]>=1.24.0
 yfinance>=0.2.40
 pandas>=2.2.0
+tavily-python>=0.7.0
