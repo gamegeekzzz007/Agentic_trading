@@ -187,8 +187,14 @@ def _sanitize_numpy(obj: Any) -> Any:
     return obj
 
 
+def _strip_numpy_wrappers(raw: str) -> str:
+    """Strip numpy type wrappers like np.float64(0.65) -> 0.65 from raw text."""
+    return re.sub(r"(?:np|numpy)\.[\w]+\(([^)]+)\)", r"\1", raw)
+
+
 def _parse_backtest_output(raw: str) -> Dict[str, Any]:
     """Best-effort parse of the CodeAgent's final answer into a dict."""
+    raw = _strip_numpy_wrappers(raw)
     # Try JSON first
     try:
         return _sanitize_numpy(json.loads(raw))
