@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import database.models as _models  # noqa: F401 — registers tables with SQLModel metadata
 from app.routes.trades import router as trades_router
 from app.routes.portfolio import router as portfolio_router
+from app.routes.agents import router as agents_router
 from app.services.alpaca import init_alpaca_service
 from database.connection import get_session, init_db
 
@@ -50,6 +51,7 @@ app = FastAPI(
 
 app.include_router(trades_router)
 app.include_router(portfolio_router)
+app.include_router(agents_router)
 
 
 @app.get("/health")

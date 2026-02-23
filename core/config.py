@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
 
+    # --- OpenClaw (Claude proxy) ---
+    OPENCLAW_BASE_URL: str = ""     # e.g. "http://76.13.241.178:18790/v1"
+    OPENCLAW_API_KEY: str = ""      # Gateway bearer token
+    OPENCLAW_MODEL_ID: str = "claude-4-6-sonnet-latest"
+
     # --- Defaults ---
     ALPACA_BASE_URL: str = "https://paper-api.alpaca.markets"
     DATABASE_URL: str = "sqlite+aiosqlite:///./agentic_trading.db"

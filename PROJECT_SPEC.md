@@ -1,4 +1,4 @@
-1. Vision: Autonomous system using OpenClaw/Moltbot & FastAPI. 24/5 cycle. Math-based (EV & Kelly Criterion), not vibes.
+1. Vision: Autonomous system using OpenClaw/Moltbot & FastAPI. 24/7 cycle. Math-based (EV & Kelly Criterion), not vibes.
 2. Architecture:
    - Orchestration: OpenClaw (Skill architecture + Heartbeat scheduler).
    - Backend: FastAPI for data ingestion/orders.

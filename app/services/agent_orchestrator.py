@@ -20,9 +20,11 @@ from dotenv import load_dotenv
 load_dotenv()  # ensure .env is loaded before model/tool init
 
 from langgraph.graph import END, START, StateGraph
-from smolagents import CodeAgent, InferenceClientModel, Tool
+from smolagents import CodeAgent, LiteLLMModel, Tool
 from tavily import TavilyClient
 from typing_extensions import TypedDict
+
+from core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +47,13 @@ class AgentState(TypedDict):
 # Model & tool setup
 # ---------------------------------------------------------------------------
 
-# Authenticates automatically via the HF_TOKEN environment variable.
-free_model = InferenceClientModel(model_id="Qwen/Qwen2.5-Coder-32B-Instruct")
+# OpenClaw: OpenAI-compatible proxy → Claude (via LiteLLM)
+_settings = get_settings()
+model = LiteLLMModel(
+    model_id=f"openai/{_settings.OPENCLAW_MODEL_ID}",
+    api_base=_settings.OPENCLAW_BASE_URL,
+    api_key=_settings.OPENCLAW_API_KEY,
+)
 
 # Tavily search client — uses TAVILY_API_KEY from .env
 _tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY", ""))
@@ -95,7 +102,7 @@ def scraper_node(state: AgentState) -> dict:
     """Search the web for a breaking macroeconomic headline."""
     agent = CodeAgent(
         tools=[_get_search_tool()],
-        model=free_model,
+        model=model,
         verbosity_level=0,
     )
     prompt = (
@@ -117,7 +124,7 @@ def theorist_node(state: AgentState) -> dict:
     catalyst = state["news_catalyst"]
     agent = CodeAgent(
         tools=[],
-        model=free_model,
+        model=model,
         verbosity_level=0,
     )
     prompt = (
@@ -141,7 +148,7 @@ def fact_checker_node(state: AgentState) -> dict:
     catalyst = state["news_catalyst"]
     agent = CodeAgent(
         tools=[_get_search_tool()],
-        model=free_model,
+        model=model,
         verbosity_level=0,
     )
     prompt = (
@@ -159,11 +166,32 @@ def fact_checker_node(state: AgentState) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _sanitize_numpy(obj: Any) -> Any:
+    """Recursively convert numpy types to native Python types."""
+    try:
+        import numpy as np
+        if isinstance(obj, dict):
+            return {k: _sanitize_numpy(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_sanitize_numpy(v) for v in obj]
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+    except ImportError:
+        pass
+    return obj
+
+
 def _parse_backtest_output(raw: str) -> Dict[str, Any]:
     """Best-effort parse of the CodeAgent's final answer into a dict."""
     # Try JSON first
     try:
-        return json.loads(raw)
+        return _sanitize_numpy(json.loads(raw))
     except (json.JSONDecodeError, TypeError):
         pass
 
@@ -171,7 +199,7 @@ def _parse_backtest_output(raw: str) -> Dict[str, Any]:
     try:
         parsed = ast.literal_eval(raw)
         if isinstance(parsed, dict):
-            return parsed
+            return _sanitize_numpy(parsed)
     except (ValueError, SyntaxError):
         pass
 
@@ -179,12 +207,12 @@ def _parse_backtest_output(raw: str) -> Dict[str, Any]:
     match = re.search(r"\{[^{}]+\}", raw, re.DOTALL)
     if match:
         try:
-            return json.loads(match.group())
+            return _sanitize_numpy(json.loads(match.group()))
         except json.JSONDecodeError:
             try:
                 parsed = ast.literal_eval(match.group())
                 if isinstance(parsed, dict):
-                    return parsed
+                    return _sanitize_numpy(parsed)
             except (ValueError, SyntaxError):
                 pass
 
@@ -199,7 +227,7 @@ def quant_sandbox_node(state: AgentState) -> dict:
 
     agent = CodeAgent(
         tools=[],
-        model=free_model,
+        model=model,
         verbosity_level=0,
         additional_authorized_imports=["yfinance", "pandas", "datetime"],
     )
@@ -212,7 +240,11 @@ def quant_sandbox_node(state: AgentState) -> dict:
         "'loss_pct', 'side', 'reasoning'."
     )
     result = agent.run(prompt)
-    parsed = _parse_backtest_output(str(result))
+    # If the agent returned a dict directly, sanitize numpy types; otherwise parse the string
+    if isinstance(result, dict):
+        parsed = _sanitize_numpy(result)
+    else:
+        parsed = _parse_backtest_output(str(result))
     logger.info("Quant sandbox results: %s", parsed)
     return {"backtest_results": parsed}
 
